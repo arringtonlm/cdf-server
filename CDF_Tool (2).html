@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SP DRC — CDF Tool</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #0f0f0f; --paper: #f5f2eb; --paper-dark: #ede9df; --rule: #c8c2b4;
+  --accent: #c0392b; --accent-light: #f9eded; --success: #1a6b3c; --success-light: #eaf4ee;
+  --mono: 'IBM Plex Mono', monospace; --sans: 'IBM Plex Sans', sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--paper); color: var(--ink); font-family: var(--sans); min-height: 100vh; font-size: 14px; }
+
+header {
+  background: var(--ink); color: var(--paper); padding: 18px 32px;
+  display: flex; align-items: baseline; gap: 20px; border-bottom: 3px solid var(--accent);
+}
+header .org { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; opacity: 0.6; }
+header h1 { font-family: var(--mono); font-size: 18px; font-weight: 600; letter-spacing: 0.05em; }
+header .subtitle { font-size: 12px; opacity: 0.5; margin-left: auto; font-family: var(--mono); }
+
+.container { max-width: 920px; margin: 0 auto; padding: 32px 24px 64px; }
+
+.steps { display: flex; margin-bottom: 36px; border: 1px solid var(--rule); overflow: hidden; border-radius: 2px; }
+.step {
+  flex: 1; padding: 10px 12px; font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--rule); background: var(--paper-dark);
+  border-right: 1px solid var(--rule); transition: all 0.3s; display: flex; align-items: center; gap: 7px;
+}
+.step:last-child { border-right: none; }
+.step.active { background: var(--ink); color: var(--paper); }
+.step.done { background: var(--success); color: white; }
+.step .num { width: 17px; height: 17px; border-radius: 50%; border: 1.5px solid currentColor; display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; }
+.step.done .num { border: none; }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+.section-label { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+.section-hint { font-size: 12px; color: #888; margin-bottom: 16px; line-height: 1.5; }
+
+/* GRID */
+.staff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 28px; }
+.field-group { display: flex; flex-direction: column; gap: 5px; }
+.field-group label { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #777; }
+.field-group input, .field-group select {
+  background: white; border: 1px solid var(--rule); border-radius: 2px;
+  padding: 8px 10px; font-family: var(--sans); font-size: 13px; color: var(--ink); outline: none; transition: border-color 0.2s;
+}
+.field-group input:focus, .field-group select:focus { border-color: var(--ink); }
+.field-group.full { grid-column: 1 / -1; }
+
+/* SPEEDKEY */
+.speedkey-section { background: white; border: 1px solid var(--rule); border-radius: 3px; padding: 16px; margin-bottom: 28px; }
+.sk-header-row { display: grid; grid-template-columns: 1fr 120px 90px 32px; gap: 8px; padding: 0 4px; margin-bottom: 6px; }
+.sk-header-row span { font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #aaa; }
+.sk-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.sk-row { display: grid; grid-template-columns: 1fr 120px 90px 32px; gap: 8px; align-items: center; }
+.sk-row input {
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 2px;
+  padding: 7px 9px; font-family: var(--sans); font-size: 13px; outline: none; transition: border-color 0.2s;
+}
+.sk-row input:focus { border-color: var(--ink); background: white; }
+.pct-wrap { display: flex; align-items: center; gap: 4px; }
+.pct-wrap input { text-align: right; }
+.pct-wrap span { font-family: var(--mono); font-size: 12px; color: #888; }
+.remove-sk { background: none; border: none; color: var(--rule); cursor: pointer; font-size: 18px; line-height: 1; padding: 0; transition: color 0.15s; }
+.remove-sk:hover { color: var(--accent); }
+.pct-bar-wrap { margin: 8px 0 6px; }
+.pct-bar { height: 5px; background: var(--paper-dark); border-radius: 3px; overflow: hidden; }
+.pct-fill { height: 100%; background: var(--success); transition: width 0.3s; border-radius: 3px; }
+.pct-fill.over { background: var(--accent); }
+.pct-label { font-family: var(--mono); font-size: 11px; margin-top: 5px; }
+.pct-label.ok { color: var(--success); }
+.pct-label.err { color: var(--accent); }
+.btn-add-sk { background: none; border: 1px dashed var(--rule); color: #888; font-family: var(--mono); font-size: 11px; padding: 7px 14px; cursor: pointer; border-radius: 2px; transition: all 0.2s; width: 100%; text-align: left; }
+.btn-add-sk:hover { border-color: var(--ink); color: var(--ink); }
+
+/* UPLOAD */
+.upload-area {
+  border: 2px dashed var(--rule); border-radius: 4px; padding: 40px 24px; text-align: center;
+  cursor: pointer; transition: all 0.2s; background: white; position: relative; margin-bottom: 20px;
+}
+.upload-area:hover, .upload-area.dragover { border-color: var(--ink); background: var(--paper-dark); }
+.upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.upload-icon { font-size: 32px; margin-bottom: 10px; display: block; }
+.upload-area h3 { font-family: var(--mono); font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.upload-area p { font-size: 12px; color: #888; }
+.receipts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px; }
+.receipt-thumb { position: relative; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; background: white; }
+.receipt-thumb img { width: 100%; height: 110px; object-fit: cover; display: block; }
+.remove-btn { position: absolute; top: 4px; right: 4px; background: var(--accent); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+.receipt-thumb .fname { padding: 4px 7px; font-family: var(--mono); font-size: 9px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* BUTTONS */
+.btn-primary { background: var(--ink); color: var(--paper); border: none; padding: 12px 26px; font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; border-radius: 2px; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px; }
+.btn-primary:hover { background: #333; }
+.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-secondary { background: transparent; color: var(--ink); border: 1.5px solid var(--ink); padding: 10px 22px; font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; border-radius: 2px; transition: all 0.2s; }
+.btn-secondary:hover { background: var(--paper-dark); }
+.btn-accent { background: var(--success); color: white; border: none; padding: 12px 26px; font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; border-radius: 2px; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px; }
+.btn-accent:hover { background: #145c33; }
+.btn-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+/* PROCESSING */
+.processing-box { background: var(--paper-dark); border: 1px solid var(--rule); border-radius: 3px; padding: 32px 24px; text-align: center; }
+.spinner { width: 30px; height: 30px; border: 3px solid var(--rule); border-top-color: var(--ink); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.processing-box .status-main { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
+.processing-box .status-sub { font-size: 12px; color: #888; }
+
+/* REVIEW TABLE */
+.table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 3px; margin-bottom: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead tr { background: var(--ink); color: var(--paper); }
+thead th { padding: 9px 8px; text-align: left; font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; white-space: nowrap; }
+tbody tr { border-bottom: 1px solid var(--rule); }
+tbody tr:nth-child(even) { background: #fafaf8; }
+tbody tr:nth-child(odd) { background: white; }
+tbody td { padding: 6px 8px; vertical-align: middle; }
+tbody td input, tbody td select {
+  width: 100%; border: 1px solid transparent; border-radius: 2px; padding: 4px 5px;
+  font-family: var(--sans); font-size: 12px; background: transparent; outline: none; transition: all 0.15s;
+}
+tbody td input:focus, tbody td select:focus { border-color: var(--rule); background: white; }
+.td-num input { text-align: right; width: 70px; }
+.td-total { font-family: var(--mono); font-size: 12px; text-align: right; white-space: nowrap; color: #444; padding-right: 12px; }
+.td-currency { font-family: var(--mono); font-size: 10px; color: #888; padding: 4px 6px; background: var(--paper-dark); border-radius: 2px; white-space: nowrap; }
+.remove-row { background: none; border: none; color: var(--rule); cursor: pointer; font-size: 16px; padding: 2px 5px; transition: color 0.15s; }
+.remove-row:hover { color: var(--accent); }
+.add-row-btn { background: none; border: 1px dashed var(--rule); color: #888; font-family: var(--mono); font-size: 11px; padding: 8px 14px; cursor: pointer; width: 100%; text-align: left; transition: all 0.2s; margin-bottom: 16px; }
+.add-row-btn:hover { border-color: var(--ink); color: var(--ink); }
+
+.totals-bar { display: flex; justify-content: flex-end; align-items: baseline; gap: 16px; padding: 12px 0 20px; border-top: 2px solid var(--ink); }
+.totals-bar .t-label { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #666; }
+.totals-bar .t-amount { font-family: var(--mono); font-size: 22px; font-weight: 600; }
+
+/* split badge */
+.split-badge { display: inline-block; background: #e8f4fd; border: 1px solid #b3d7f0; color: #1a5276; font-family: var(--mono); font-size: 9px; border-radius: 2px; padding: 1px 5px; margin-left: 4px; vertical-align: middle; }
+.split-row td { background: #f7fbff !important; }
+
+/* SUCCESS */
+.success-box { background: var(--success-light); border: 1px solid var(--success); border-radius: 3px; padding: 24px; text-align: center; margin-bottom: 24px; }
+.success-box .check { font-size: 36px; display: block; margin-bottom: 8px; }
+.success-box h3 { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--success); margin-bottom: 6px; }
+.success-box p { font-size: 12px; color: #555; }
+
+.summary-block { background: white; border: 1px solid var(--rule); border-radius: 3px; padding: 16px 20px; margin-bottom: 24px; font-family: var(--mono); font-size: 12px; line-height: 2.2; }
+.summary-block strong { color: var(--ink); }
+
+hr.divider { border: none; border-top: 1px solid var(--rule); margin: 24px 0; }
+
+.info-note { background: #f0f7ff; border: 1px solid #b8d4f0; border-radius: 3px; padding: 10px 14px; font-size: 12px; color: #1a4a7a; margin-bottom: 16px; }
+
+@media (max-width: 600px) {
+  .staff-grid { grid-template-columns: 1fr; }
+  .sk-header-row, .sk-row { grid-template-columns: 1fr 90px 70px 28px; }
+  header .subtitle { display: none; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="org">SP DRC</span>
+  <h1>Cash Disbursement Form</h1>
+  <span class="subtitle">Receipt → CDF Tool</span>
+</header>
+
+<div class="container">
+
+  <div class="steps">
+    <div class="step active" id="step1-ind"><span class="num">1</span> Staff Details</div>
+    <div class="step" id="step2-ind"><span class="num">2</span> Upload Receipts</div>
+    <div class="step" id="step3-ind"><span class="num">3</span> Review &amp; Edit</div>
+    <div class="step" id="step4-ind"><span class="num">4</span> Download CDF</div>
+  </div>
+
+  <!-- ═══ PANEL 1: STAFF DETAILS ═══ -->
+  <div class="panel active" id="panel1">
+    <div class="section-label">Step 1 — Staff Information</div>
+    <p class="section-hint">This information will pre-fill the top of your CDF. Enter your details once — they stay until you reset the form.</p>
+    <div class="staff-grid">
+      <div class="field-group">
+        <label>Full Name</label>
+        <input type="text" id="staff-name" placeholder="e.g. Lauren Arrington">
+      </div>
+      <div class="field-group">
+        <label>Email</label>
+        <input type="email" id="staff-email" placeholder="e.g. larrington@samaritan.org">
+      </div>
+      <div class="field-group">
+        <label>Phone</label>
+        <input type="text" id="staff-phone" placeholder="e.g. +243...">
+      </div>
+      <div class="field-group">
+        <label>Delivery / Field Location</label>
+        <input type="text" id="staff-location" placeholder="e.g. Bunia">
+      </div>
+      <div class="field-group">
+        <label>Purchase Req #</label>
+        <input type="text" id="req-number" placeholder="e.g. CDF-2026-001">
+      </div>
+      <div class="field-group">
+        <label>Date Submitted</label>
+        <input type="date" id="date-submitted">
+      </div>
+    </div>
+
+    <div class="section-label">Speedkey Allocation</div>
+    <p class="section-hint">Add one or more speedkeys. If you use multiple, set the % split — all percentages must add up to 100%. Each receipt line item will be automatically split across speedkeys in the CDF.</p>
+
+    <div class="speedkey-section">
+      <div class="sk-header-row">
+        <span>Speedkey Code</span>
+        <span>Description</span>
+        <span>% Allocation</span>
+        <span></span>
+      </div>
+      <div class="sk-rows" id="sk-rows"></div>
+      <div class="pct-bar-wrap">
+        <div class="pct-bar"><div class="pct-fill" id="pct-fill" style="width:0%"></div></div>
+        <div class="pct-label" id="pct-label">0% allocated — add at least one speedkey</div>
+      </div>
+      <button class="btn-add-sk" onclick="addSpeedkey()">+ Add speedkey</button>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-primary" onclick="validateAndNext()">Next — Upload Receipts →</button>
+    </div>
+    <div id="step1-error" style="margin-top:12px; font-family:var(--mono); font-size:12px; color:var(--accent);"></div>
+  </div>
+
+  <!-- ═══ PANEL 2: UPLOAD ═══ -->
+  <div class="panel" id="panel2">
+    <div class="section-label">Step 2 — Upload Receipt Photos</div>
+    <p class="section-hint">Upload one or more receipt photos. The AI will read each one and extract line items automatically. You can upload receipts in USD or CDF — each will generate a separate CDF in the correct currency.</p>
+
+    <div class="upload-area" id="upload-area">
+      <input type="file" id="file-input" accept="image/*" multiple>
+      <span class="upload-icon">📄</span>
+      <h3>Drop receipt photos here or tap to browse</h3>
+      <p>Accepts JPG, PNG — upload one or multiple receipts</p>
+    </div>
+
+    <div class="receipts-grid" id="receipts-grid"></div>
+
+    <div class="btn-row">
+      <button class="btn-secondary" onclick="goToStep(1)">← Back</button>
+      <button class="btn-primary" id="process-btn" onclick="processReceipts()" disabled>✦ Extract with AI →</button>
+    </div>
+  </div>
+
+  <!-- ═══ PANEL 3: PROCESSING ═══ -->
+  <div class="panel" id="panel3">
+    <div class="processing-box">
+      <div class="spinner"></div>
+      <div class="status-main" id="status-main">Reading receipts…</div>
+      <div class="status-sub" id="status-sub">Please wait while AI extracts the details</div>
+    </div>
+  </div>
+
+  <!-- ═══ PANEL 4: REVIEW ═══ -->
+  <div class="panel" id="panel4">
+    <div class="section-label">Step 3 — Review &amp; Edit Line Items</div>
+    <p class="section-hint">Check the extracted items below. Edit any fields if needed. Items are split across your speedkeys — each split row will become a separate line on the CDF.</p>
+
+    <div id="review-tables"></div>
+
+    <button class="add-row-btn" onclick="addManualRow()">+ Add a line item manually</button>
+
+    <div class="totals-bar">
+      <span class="t-label">Grand Total</span>
+      <span class="t-amount" id="grand-total">—</span>
+    </div>
+
+    <hr class="divider">
+    <div class="btn-row">
+      <button class="btn-secondary" onclick="goToStep(2)">← Re-upload</button>
+      <button class="btn-primary" onclick="goToStep(5)">Looks Good — Generate CDF →</button>
+    </div>
+  </div>
+
+  <!-- ═══ PANEL 5: DOWNLOAD ═══ -->
+  <div class="panel" id="panel5">
+    <div class="section-label">Step 4 — Download Your CDF</div>
+    <div class="success-box">
+      <span class="check">✓</span>
+      <h3>CDF Ready to Download</h3>
+      <p>Your form has been filled into the official SP DRC template, preserving all formatting.</p>
+    </div>
+    <div class="summary-block" id="summary-block"></div>
+    <div class="btn-row">
+      <button class="btn-accent" onclick="downloadCDF()">⬇ Download CDF.xlsx</button>
+      <button class="btn-secondary" onclick="startOver()">Start New CDF</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+let uploadedFiles = [];   // {file, dataUrl, name}
+let lineItems = [];       // {description, date, qty, unitPrice, currency, source}
+let speedkeys = [];       // {code, label, pct}
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+document.getElementById("date-submitted").value = new Date().toISOString().split("T")[0];
+addSpeedkey(); // Start with one empty speedkey row
+
+// ═══════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════
+function goToStep(n) {
+  document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+  const map = {1:"panel1",2:"panel2",3:"panel3",4:"panel4",5:"panel5"};
+  document.getElementById(map[n]).classList.add("active");
+  window.scrollTo(0,0);
+  const display = n >= 5 ? 4 : n === 3 ? 2 : n;
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById("step"+i+"-ind");
+    el.classList.remove("active","done");
+    if (i < display) el.classList.add("done");
+    else if (i === display) el.classList.add("active");
+  }
+  if (n === 5) buildSummary();
+}
+
+// ═══════════════════════════════════════════════════════════
+// SPEEDKEY MANAGEMENT
+// ═══════════════════════════════════════════════════════════
+function addSpeedkey(code="", label="", pct=100) {
+  // If adding new one, redistribute pct
+  if (speedkeys.length > 0 && code === "") {
+    const equal = Math.floor(100 / (speedkeys.length + 1));
+    speedkeys.forEach(sk => sk.pct = equal);
+    pct = 100 - equal * speedkeys.length;
+  }
+  speedkeys.push({ code, label, pct });
+  renderSpeedkeys();
+}
+
+function removeSpeedkey(i) {
+  if (speedkeys.length <= 1) return;
+  speedkeys.splice(i, 1);
+  redistributePct();
+  renderSpeedkeys();
+}
+
+function redistributePct() {
+  const equal = Math.floor(100 / speedkeys.length);
+  const rem = 100 - equal * speedkeys.length;
+  speedkeys.forEach((sk, i) => sk.pct = equal + (i === 0 ? rem : 0));
+}
+
+function renderSpeedkeys() {
+  const container = document.getElementById("sk-rows");
+  container.innerHTML = "";
+  speedkeys.forEach((sk, i) => {
+    const row = document.createElement("div");
+    row.className = "sk-row";
+    row.innerHTML = `
+      <input type="text" placeholder="e.g. SP-DRC-A" value="${esc(sk.code)}"
+        oninput="speedkeys[${i}].code=this.value">
+      <input type="text" placeholder="Description (optional)" value="${esc(sk.label)}"
+        oninput="speedkeys[${i}].label=this.value">
+      <div class="pct-wrap">
+        <input type="number" min="0" max="100" step="1" value="${sk.pct}"
+          oninput="speedkeys[${i}].pct=+this.value; updatePctBar()">
+        <span>%</span>
+      </div>
+      <button class="remove-sk" onclick="removeSpeedkey(${i})" title="Remove">×</button>
+    `;
+    container.appendChild(row);
+  });
+  updatePctBar();
+}
+
+function updatePctBar() {
+  const total = speedkeys.reduce((s, sk) => s + (sk.pct || 0), 0);
+  const fill = document.getElementById("pct-fill");
+  const label = document.getElementById("pct-label");
+  fill.style.width = Math.min(total, 100) + "%";
+  fill.className = "pct-fill" + (total > 100 ? " over" : "");
+  if (total === 100) {
+    label.textContent = "✓ 100% allocated";
+    label.className = "pct-label ok";
+  } else if (total > 100) {
+    label.textContent = `Over-allocated: ${total}% (must equal 100%)`;
+    label.className = "pct-label err";
+  } else {
+    label.textContent = `${total}% allocated — needs to reach 100%`;
+    label.className = "pct-label err";
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// STEP 1 VALIDATION
+// ═══════════════════════════════════════════════════════════
+function validateAndNext() {
+  const errEl = document.getElementById("step1-error");
+  const name = document.getElementById("staff-name").value.trim();
+  if (!name) { errEl.textContent = "Please enter your name."; return; }
+
+  const total = speedkeys.reduce((s, sk) => s + (sk.pct || 0), 0);
+  if (total !== 100) { errEl.textContent = `Speedkey percentages must add up to 100% (currently ${total}%).`; return; }
+
+  const hasCode = speedkeys.some(sk => sk.code.trim());
+  if (!hasCode) { errEl.textContent = "Please enter at least one speedkey code."; return; }
+
+  errEl.textContent = "";
+  goToStep(2);
+}
+
+// ═══════════════════════════════════════════════════════════
+// FILE UPLOAD
+// ═══════════════════════════════════════════════════════════
+const fileInput = document.getElementById("file-input");
+const uploadArea = document.getElementById("upload-area");
+
+fileInput.addEventListener("change", e => handleFiles(e.target.files));
+uploadArea.addEventListener("dragover", e => { e.preventDefault(); uploadArea.classList.add("dragover"); });
+uploadArea.addEventListener("dragleave", () => uploadArea.classList.remove("dragover"));
+uploadArea.addEventListener("drop", e => {
+  e.preventDefault(); uploadArea.classList.remove("dragover");
+  handleFiles(e.dataTransfer.files);
+});
+
+function handleFiles(files) {
+  Array.from(files).forEach(file => {
+    if (!file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      // Compress before storing: resize to max 1400px, JPEG 80%
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1400;
+        let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) {
+          if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+          else { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL("image/jpeg", 0.80);
+        uploadedFiles.push({ file, dataUrl: compressed, name: file.name, mediaType: "image/jpeg" });
+        renderThumbs();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderThumbs() {
+  const grid = document.getElementById("receipts-grid");
+  grid.innerHTML = "";
+  uploadedFiles.forEach((f, i) => {
+    grid.innerHTML += `<div class="receipt-thumb">
+      <img src="${f.dataUrl}" alt="Receipt ${i+1}">
+      <button class="remove-btn" onclick="removeFile(${i})">×</button>
+      <div class="fname">${esc(f.name)}</div>
+    </div>`;
+  });
+  document.getElementById("process-btn").disabled = uploadedFiles.length === 0;
+}
+
+function removeFile(i) { uploadedFiles.splice(i, 1); renderThumbs(); }
+
+// ═══════════════════════════════════════════════════════════
+// AI PROCESSING
+// ═══════════════════════════════════════════════════════════
+async function processReceipts() {
+  if (!uploadedFiles.length) return;
+  goToStep(3);
+  lineItems = [];
+
+  for (let i = 0; i < uploadedFiles.length; i++) {
+    const f = uploadedFiles[i];
+    document.getElementById("status-main").textContent = `Reading receipt ${i+1} of ${uploadedFiles.length}…`;
+    document.getElementById("status-sub").textContent = f.name;
+
+    try {
+      // Send image to server for scanning (avoids browser API key issues)
+      const formData = new FormData();
+      // Convert dataUrl back to blob
+      const res = await fetch(f.dataUrl);
+      const blob = await res.blob();
+      formData.append("image", blob, f.name);
+
+      document.getElementById("status-sub").textContent = `${f.name} — sending to server…`;
+
+      const response = await fetch(`${SERVER_URL}/scan-receipt`, {
+        method: "POST",
+        body: formData
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Server error ${response.status}`);
+      }
+
+      const data = await response.json();
+      data.items.forEach(item => lineItems.push({ ...item, source: f.name }));
+
+    } catch (err) {
+      console.error(err);
+      lineItems.push({ description: `[Could not read: ${f.name}]`, date: "", qty: 1, unitPrice: 0, currency: "USD", source: f.name });
+    }
+  }
+
+  renderReview();
+  goToStep(4);
+}
+
+// ═══════════════════════════════════════════════════════════
+// REVIEW TABLE — with speedkey splits
+// ═══════════════════════════════════════════════════════════
+function renderReview() {
+  const wrap = document.getElementById("review-tables");
+  wrap.innerHTML = "";
+
+  // Group items by currency
+  const currencies = [...new Set(lineItems.map(it => it.currency || "USD"))];
+
+  currencies.forEach(curr => {
+    const currItems = lineItems.filter(it => (it.currency || "USD") === curr);
+    if (!currItems.isEmpty) {
+      const section = document.createElement("div");
+      section.style.marginBottom = "20px";
+
+      const label = document.createElement("div");
+      label.className = "section-label";
+      label.style.marginBottom = "8px";
+      label.textContent = `Currency: ${curr}`;
+      section.appendChild(label);
+
+      const tableWrap = document.createElement("div");
+      tableWrap.className = "table-wrap";
+
+      const needsSplit = speedkeys.length > 1;
+
+      tableWrap.innerHTML = `<table>
+        <thead><tr>
+          <th>#</th>
+          <th style="min-width:180px">Description</th>
+          <th>Date</th>
+          <th>Speedkey</th>
+          <th>Qty</th>
+          <th>Unit Price</th>
+          <th style="text-align:right;padding-right:12px">Line Total</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="tbody-${curr}"></tbody>
+      </table>`;
+      section.appendChild(tableWrap);
+      wrap.appendChild(section);
+    }
+  });
+
+  // Render all rows
+  lineItems.forEach((item, idx) => renderItemRows(idx));
+  updateGrandTotal();
+}
+
+function renderItemRows(idx) {
+  const item = lineItems[idx];
+  const curr = item.currency || "USD";
+  const tbody = document.getElementById("tbody-" + curr);
+  if (!tbody) return;
+
+  const needsSplit = speedkeys.length > 1;
+
+  if (!needsSplit) {
+    // Single speedkey — one row
+    const sk = speedkeys[0] || { code: "", pct: 100 };
+    const lineTotal = (item.qty || 1) * (item.unitPrice || 0);
+    appendRow(tbody, idx, null, item.description, item.date, sk.code, item.qty, item.unitPrice, lineTotal, curr, false);
+  } else {
+    // Multiple speedkeys — one row per speedkey
+    speedkeys.forEach((sk, skIdx) => {
+      const skFraction = (sk.pct || 0) / 100;
+      const skTotal = (item.qty || 1) * (item.unitPrice || 0) * skFraction;
+      const skUnitPrice = (item.unitPrice || 0) * skFraction;
+      appendRow(tbody, idx, skIdx,
+        skIdx === 0 ? item.description : "",
+        skIdx === 0 ? item.date : "",
+        sk.code,
+        item.qty || 1,
+        skUnitPrice,
+        skTotal,
+        curr,
+        true
+      );
+    });
+  }
+}
+
+function appendRow(tbody, itemIdx, skIdx, desc, date, skCode, qty, unitPrice, lineTotal, curr, isSplit) {
+  const tr = document.createElement("tr");
+  if (isSplit && skIdx !== null && skIdx > 0) tr.className = "split-row";
+  tr.dataset.itemIdx = itemIdx;
+  tr.dataset.skIdx = skIdx !== null ? skIdx : "";
+
+  const rowNum = itemIdx + 1;
+  const splitLabel = isSplit && skIdx !== null ? `<span class="split-badge">${speedkeys[skIdx].pct}%</span>` : "";
+
+  tr.innerHTML = `
+    <td style="font-family:var(--mono);font-size:10px;color:#bbb;padding-left:10px">${skIdx === null || skIdx === 0 ? rowNum : ""}</td>
+    <td><input type="text" value="${esc(desc)}" placeholder="Description"
+      onchange="updateLineItem(${itemIdx},'description',this.value)"
+      style="min-width:160px">${splitLabel}</td>
+    <td><input type="text" value="${esc(date)}" placeholder="DD/MM/YYYY"
+      onchange="updateLineItem(${itemIdx},'date',this.value)" style="width:95px"></td>
+    <td><input type="text" value="${esc(skCode)}" placeholder="speedkey" style="width:90px"
+      ${isSplit ? `onchange="updateSpeedkeyCode(${skIdx},this.value)"` : `onchange="updateLineItem(${itemIdx},'speedkeyOverride',this.value)"`}></td>
+    <td class="td-num"><input type="number" value="${(+qty).toFixed(0)}" min="0" step="1"
+      onchange="updateLineItem(${itemIdx},'qty',+this.value)"></td>
+    <td class="td-num"><input type="number" value="${(+unitPrice).toFixed(2)}" min="0" step="0.01"
+      onchange="updateLineItem(${itemIdx},'unitPrice',+this.value)"></td>
+    <td class="td-total">${curr} ${lineTotal.toFixed(2)}</td>
+    <td>${skIdx === null || skIdx === 0 ? `<button class="remove-row" onclick="removeLineItem(${itemIdx})" title="Remove">×</button>` : ""}</td>
+  `;
+  tbody.appendChild(tr);
+}
+
+function updateLineItem(idx, field, val) {
+  lineItems[idx][field] = val;
+  // Re-render all review tables
+  renderReview();
+}
+
+function updateSpeedkeyCode(skIdx, val) {
+  speedkeys[skIdx].code = val;
+  renderReview();
+}
+
+function removeLineItem(idx) {
+  lineItems.splice(idx, 1);
+  renderReview();
+}
+
+function addManualRow() {
+  const currency = lineItems.length > 0 ? (lineItems[0].currency || "USD") : "USD";
+  lineItems.push({ description: "", date: "", qty: 1, unitPrice: 0, currency, source: "manual" });
+  renderReview();
+}
+
+function updateGrandTotal() {
+  const byCurr = {};
+  lineItems.forEach(it => {
+    const c = it.currency || "USD";
+    byCurr[c] = (byCurr[c] || 0) + (it.qty || 1) * (it.unitPrice || 0);
+  });
+  const parts = Object.entries(byCurr).map(([c, v]) => `${c} ${v.toFixed(2)}`);
+  document.getElementById("grand-total").textContent = parts.join("  +  ") || "—";
+}
+
+// ═══════════════════════════════════════════════════════════
+// SUMMARY
+// ═══════════════════════════════════════════════════════════
+function buildSummary() {
+  const name = document.getElementById("staff-name").value || "—";
+  const req = document.getElementById("req-number").value || "—";
+  const date = document.getElementById("date-submitted").value || "—";
+
+  const byCurr = {};
+  lineItems.forEach(it => {
+    const c = it.currency || "USD";
+    byCurr[c] = (byCurr[c] || 0) + (it.qty || 1) * (it.unitPrice || 0);
+  });
+
+  const skSummary = speedkeys.filter(sk => sk.code).map(sk => `${sk.code} (${sk.pct}%)`).join(", ");
+  const totalStr = Object.entries(byCurr).map(([c,v]) => `${c} ${v.toFixed(2)}`).join(" + ");
+
+  document.getElementById("summary-block").innerHTML = `
+    <div>Requestor: <strong>${esc(name)}</strong></div>
+    <div>Req #: <strong>${esc(req)}</strong></div>
+    <div>Date: <strong>${esc(date)}</strong></div>
+    <div>Line items: <strong>${lineItems.length}</strong></div>
+    <div>Speedkeys: <strong>${esc(skSummary)}</strong></div>
+    <div>Total: <strong>${esc(totalStr) || "—"}</strong></div>
+    ${Object.keys(byCurr).length > 1 ? "<div style=\"color:var(--accent);font-size:11px;margin-top:4px\">⚠ Multiple currencies detected — one CDF file will be generated per currency.</div>" : ""}
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SERVER URL — update this after deploying to Render
+// ═══════════════════════════════════════════════════════════
+const SERVER_URL = "https://cdf-server.onrender.com";
+
+// ═══════════════════════════════════════════════════════════
+// DOWNLOAD — sends data to Python backend, receives filled xlsx
+// ═══════════════════════════════════════════════════════════
+async function downloadCDF() {
+  const name          = document.getElementById("staff-name").value;
+  const email         = document.getElementById("staff-email").value;
+  const phone         = document.getElementById("staff-phone").value;
+  const location      = document.getElementById("staff-location").value;
+  const reqNum        = document.getElementById("req-number").value;
+  const dateSubmitted = document.getElementById("date-submitted").value;
+
+  if (!lineItems.length) { alert("No line items to export."); return; }
+
+  // Group items by currency — one file per currency
+  const byCurr = {};
+  lineItems.forEach(it => {
+    const c = it.currency || "USD";
+    if (!byCurr[c]) byCurr[c] = [];
+    byCurr[c].push(it);
+  });
+
+  // Disable button while downloading
+  const btn = document.querySelector(".btn-accent");
+  const origText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = "⏳ Generating…";
+
+  try {
+    for (const [currency, items] of Object.entries(byCurr)) {
+
+      // Expand line items by speedkey splits
+      const expandedItems = [];
+      items.forEach(item => {
+        if (speedkeys.length <= 1) {
+          const sk = speedkeys[0] || { code: "", pct: 100 };
+          expandedItems.push({
+            description: item.description || "",
+            date:        item.date || "",
+            speedkey:    item.speedkeyOverride || sk.code,
+            qty:         item.qty || 1,
+            unitPrice:   item.unitPrice || 0
+          });
+        } else {
+          speedkeys.forEach(sk => {
+            const frac = (sk.pct || 0) / 100;
+            expandedItems.push({
+              description: item.description || "",
+              date:        item.date || "",
+              speedkey:    sk.code,
+              qty:         item.qty || 1,
+              unitPrice:   parseFloat(((item.unitPrice || 0) * frac).toFixed(4))
+            });
+          });
+        }
+      });
+
+      const payload = {
+        name, email, phone, location,
+        req_num:        reqNum,
+        date_submitted: dateSubmitted,
+        currency,
+        items: expandedItems
+      };
+
+      const response = await fetch(`${SERVER_URL}/fill-cdf`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Server error ${response.status}`);
+      }
+
+      // Trigger download from the blob response
+      const blob = await response.blob();
+      const safeName = name.replace(/\s+/g, "_") || "Staff";
+      const dateStr  = dateSubmitted.replace(/-/g, "") || "nodate";
+      const filename = `CDF_${safeName}_${currency}_${dateStr}.xlsx`;
+
+      const url = URL.createObjectURL(blob);
+      const a   = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  } catch (err) {
+    alert(`Could not generate CDF:\n\n${err.message}\n\nMake sure the server URL is set correctly in the HTML file.`);
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origText;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// RESET
+// ═══════════════════════════════════════════════════════════
+function startOver() {
+  uploadedFiles = [];
+  lineItems = [];
+  document.getElementById("receipts-grid").innerHTML = "";
+  document.getElementById("process-btn").disabled = true;
+  document.getElementById("file-input").value = "";
+  document.getElementById("date-submitted").value = new Date().toISOString().split("T")[0];
+  goToStep(1);
+}
+
+function esc(str) {
+  return String(str||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+</script>
+</body>
+</html>
