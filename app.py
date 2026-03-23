@@ -1,32 +1,101 @@
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 import openpyxl
+import anthropic
+import base64
 import io
 import os
-from datetime import datetime
+import json
 
 app = Flask(__name__)
 CORS(app)
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "CDF_Template.xlsx")
 
+client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
 
+
+# ── Receipt scanning ─────────────────────────────────────────────────────────
+@app.route("/scan-receipt", methods=["POST"])
+def scan_receipt():
+    try:
+        if "image" not in request.files:
+            return jsonify({"error": "No image uploaded"}), 400
+
+        file = request.files["image"]
+        image_data = file.read()
+        media_type = file.content_type or "image/jpeg"
+
+        # Encode to base64 for Anthropic API
+        b64 = base64.standard_b64encode(image_data).decode("utf-8")
+
+        prompt = """You are reading a receipt image to extract expense data.
+
+IMPORTANT CURRENCY RULES:
+- If the receipt shows CDF, Fc, FC, or Congolese Francs: currency = "CDF"
+- If the receipt shows $, USD, or US Dollars: currency = "USD"
+- Do NOT convert between currencies — report the exact amount shown on the receipt
+- If both currencies appear (e.g. a bank slip alongside a store receipt), use the currency of the store receipt total
+
+Extract each distinct line item. For receipts showing one total (e.g. a restaurant bill), return ONE item using the total.
+
+Return ONLY a valid JSON array, no markdown, no explanation. Each object:
+{
+  "description": "short description",
+  "date": "DD/MM/YYYY or empty string",
+  "qty": 1,
+  "unitPrice": <number — exact amount in the receipt currency>,
+  "currency": "USD" or "CDF"
+}"""
+
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1000,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": b64
+                        }
+                    },
+                    {"type": "text", "text": prompt}
+                ]
+            }]
+        )
+
+        text = "".join(block.text for block in message.content if hasattr(block, "text"))
+        clean = text.replace("```json", "").replace("```", "").strip()
+        items = json.loads(clean)
+        return jsonify({"items": items})
+
+    except json.JSONDecodeError as e:
+        return jsonify({"error": f"Could not parse receipt data: {str(e)}", "raw": text}), 422
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── CDF filling ──────────────────────────────────────────────────────────────
 @app.route("/fill-cdf", methods=["POST"])
 def fill_cdf():
     try:
         data = request.get_json()
 
-        name          = data.get("name", "")
-        email         = data.get("email", "")
-        phone         = data.get("phone", "")
-        location      = data.get("location", "")
-        req_num       = data.get("req_num", "")
+        name           = data.get("name", "")
+        email          = data.get("email", "")
+        phone          = data.get("phone", "")
+        location       = data.get("location", "")
+        req_num        = data.get("req_num", "")
         date_submitted = data.get("date_submitted", "")
-        currency      = data.get("currency", "USD")
-        items         = data.get("items", [])   # [{description, speedkey, qty, unitPrice, date}]
+        currency       = data.get("currency", "USD")
+        items          = data.get("items", [])
 
         wb = openpyxl.load_workbook(TEMPLATE_PATH)
         ws = wb["Cash Disbursement"]
@@ -44,13 +113,11 @@ def fill_cdf():
         ws["J6"] = "X" if currency == "CDF" else ""
 
         # ── Line items ───────────────────────────────────────────
-        start_row = 22
         grand_total = 0.0
-
         for i, item in enumerate(items):
             if i >= 19:
                 break
-            row = start_row + i
+            row        = 22 + i
             desc       = item.get("description", "")
             item_date  = item.get("date", "")
             speedkey   = item.get("speedkey", "")
@@ -85,7 +152,7 @@ def fill_cdf():
         ws["D56"] = 0
         ws["D58"] = 0
 
-        # ── Save to buffer & return ──────────────────────────────
+        # ── Save & return ────────────────────────────────────────
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)
