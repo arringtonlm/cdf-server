@@ -8,29 +8,48 @@ import os
 import json
 
 app = Flask(__name__)
-CORS(app)
+
+# Allow requests from any origin (needed for local HTML files)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "CDF_Template.xlsx")
 
-client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+def get_client():
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
+    return anthropic.Anthropic(api_key=api_key)
+
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok"})
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    return jsonify({"status": "ok", "api_key_set": bool(api_key)})
 
 
-# ── Receipt scanning ─────────────────────────────────────────────────────────
-@app.route("/scan-receipt", methods=["POST"])
+# -- Receipt scanning ---------------------------------------------------------
+@app.route("/scan-receipt", methods=["POST", "OPTIONS"])
 def scan_receipt():
+    if request.method == "OPTIONS":
+        return "", 204
+
     try:
+        client = get_client()
+
         if "image" not in request.files:
-            return jsonify({"error": "No image uploaded"}), 400
+            return jsonify({"error": "No image file received"}), 400
 
         file = request.files["image"]
         image_data = file.read()
-        media_type = file.content_type or "image/jpeg"
 
-        # Encode to base64 for Anthropic API
+        if not image_data:
+            return jsonify({"error": "Image file is empty"}), 400
+
+        media_type = file.content_type or "image/jpeg"
+        if media_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+            media_type = "image/jpeg"
+
         b64 = base64.standard_b64encode(image_data).decode("utf-8")
 
         prompt = """You are reading a receipt image to extract expense data.
@@ -58,14 +77,7 @@ Return ONLY a valid JSON array, no markdown, no explanation. Each object:
             messages=[{
                 "role": "user",
                 "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": b64
-                        }
-                    },
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
                     {"type": "text", "text": prompt}
                 ]
             }]
@@ -76,17 +88,24 @@ Return ONLY a valid JSON array, no markdown, no explanation. Each object:
         items = json.loads(clean)
         return jsonify({"items": items})
 
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 503
     except json.JSONDecodeError as e:
-        return jsonify({"error": f"Could not parse receipt data: {str(e)}", "raw": text}), 422
+        return jsonify({"error": f"Could not parse AI response: {str(e)}"}), 422
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-# ── CDF filling ──────────────────────────────────────────────────────────────
-@app.route("/fill-cdf", methods=["POST"])
+# -- CDF filling --------------------------------------------------------------
+@app.route("/fill-cdf", methods=["POST", "OPTIONS"])
 def fill_cdf():
+    if request.method == "OPTIONS":
+        return "", 204
+
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data received"}), 400
 
         name           = data.get("name", "")
         email          = data.get("email", "")
@@ -100,7 +119,6 @@ def fill_cdf():
         wb = openpyxl.load_workbook(TEMPLATE_PATH)
         ws = wb["Cash Disbursement"]
 
-        # ── Header ──────────────────────────────────────────────
         ws["L1"] = req_num
         ws["L2"] = date_submitted
         ws["L3"] = date_submitted
@@ -112,7 +130,6 @@ def fill_cdf():
         ws["I6"] = "X" if currency == "USD" else ""
         ws["J6"] = "X" if currency == "CDF" else ""
 
-        # ── Line items ───────────────────────────────────────────
         grand_total = 0.0
         for i, item in enumerate(items):
             if i >= 19:
@@ -137,22 +154,15 @@ def fill_cdf():
             ws[f"L{row}"] = line_total
 
         grand_total = round(grand_total, 2)
-
-        # ── Totals ───────────────────────────────────────────────
         ws["J41"] = grand_total
         ws["L41"] = grand_total
-
-        # ── Receipt / clearance ──────────────────────────────────
         ws["A46"] = name
         ws["C64"] = name
-
-        # ── Reconciliation ───────────────────────────────────────
         ws["D52"] = grand_total
         ws["D54"] = grand_total
         ws["D56"] = 0
         ws["D58"] = 0
 
-        # ── Save & return ────────────────────────────────────────
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)
