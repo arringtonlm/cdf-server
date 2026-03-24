@@ -9,8 +9,9 @@ import json
 
 app = Flask(__name__)
 
-# Allow requests from any origin (needed for local HTML files)
-CORS(app, resources={r"/*": {"origins": "*"}})
+NETLIFY_URL = "https://radiant-daifuku-afd6ca.netlify.app"
+
+CORS(app, resources={r"/*": {"origins": [NETLIFY_URL, "http://localhost:8080", "http://127.0.0.1:8080"]}})
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "CDF_Template.xlsx")
 
