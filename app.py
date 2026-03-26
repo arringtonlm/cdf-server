@@ -1,7 +1,7 @@
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 import openpyxl
-from openpyxl.styles import Alignment, numbers
+from openpyxl.styles import Alignment, Font
 import anthropic
 import base64
 import io
@@ -9,8 +9,6 @@ import os
 import json
 
 app = Flask(__name__)
-
-# Allow all origins — server is read-only and has no user data to protect
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "CDF_Template.xlsx")
@@ -21,7 +19,7 @@ def get_client():
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY is not set in environment variables")
     if not api_key.startswith("sk-"):
-        raise ValueError(f"ANTHROPIC_API_KEY looks invalid (should start with sk-ant-). Got: {api_key[:8]}...")
+        raise ValueError(f"ANTHROPIC_API_KEY looks invalid. Got: {api_key[:8]}...")
     try:
         return anthropic.Anthropic(api_key=api_key)
     except Exception as e:
@@ -29,18 +27,16 @@ def get_client():
 
 
 def fmt_currency(currency):
-    """Return an openpyxl number format string for the given currency."""
     if currency == "CDF":
         return '#,##0.00" CDF"'
-    return '"$"#,##0.00'   # USD default
+    return '"$"#,##0.00'
 
 
 def set_number(ws, addr, value, num_format):
-    """Write a numeric value with alignment and number format, preserving existing cell style."""
+    """Write a numeric value with centre alignment and number format."""
     cell = ws[addr]
     cell.value = value
     cell.number_format = num_format
-    # Preserve existing alignment but ensure horizontal is center for numbers
     existing = cell.alignment
     cell.alignment = Alignment(
         horizontal="center",
@@ -49,13 +45,30 @@ def set_number(ws, addr, value, num_format):
     )
 
 
+def standardise_fonts(ws):
+    """Set every cell in the sheet to Arial Narrow, preserving all other font properties."""
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.font and cell.font.name not in ('Arial Narrow', None, ''):
+                old = cell.font
+                cell.font = Font(
+                    name='Arial Narrow',
+                    size=old.size,
+                    bold=old.bold,
+                    italic=old.italic,
+                    underline=old.underline,
+                    strike=old.strike,
+                    color=old.color
+                )
+
+
 @app.route("/health", methods=["GET"])
 def health():
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     return jsonify({"status": "ok", "api_key_set": bool(api_key)})
 
 
-# -- Receipt scanning ---------------------------------------------------------
+# ── Receipt scanning ─────────────────────────────────────────────────────────
 @app.route("/scan-receipt", methods=["POST", "OPTIONS"])
 def scan_receipt():
     if request.method == "OPTIONS":
@@ -98,7 +111,7 @@ Return ONLY a valid JSON array, no markdown, no explanation. Each object:
   "currency": "USD" or "CDF"
 }"""
 
-        message = client.messages.create(
+        response = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=1000,
             messages=[{
@@ -110,7 +123,7 @@ Return ONLY a valid JSON array, no markdown, no explanation. Each object:
             }]
         )
 
-        text  = "".join(block.text for block in message.content if hasattr(block, "text"))
+        text = "".join(block.text for block in response.content if hasattr(block, "text"))
         clean = text.replace("```json", "").replace("```", "").strip()
         items = json.loads(clean)
         return jsonify({"items": items})
@@ -123,7 +136,7 @@ Return ONLY a valid JSON array, no markdown, no explanation. Each object:
         return jsonify({"error": str(e)}), 500
 
 
-# -- CDF filling --------------------------------------------------------------
+# ── CDF filling ───────────────────────────────────────────────────────────────
 @app.route("/fill-cdf", methods=["POST", "OPTIONS"])
 def fill_cdf():
     if request.method == "OPTIONS":
@@ -143,13 +156,15 @@ def fill_cdf():
         date_submitted = data.get("date_submitted", "")
         currency       = data.get("currency", "USD")
         items          = data.get("items", [])
-
-        curr_fmt = fmt_currency(currency)
+        curr_fmt       = fmt_currency(currency)
 
         wb = openpyxl.load_workbook(TEMPLATE_PATH)
         ws = wb["Cash Disbursement"]
 
-        # ── Header ──────────────────────────────────────────────
+        # ── Standardise all fonts to Arial Narrow ────────────────
+        standardise_fonts(ws)
+
+        # ── Header ───────────────────────────────────────────────
         ws["L1"] = req_num
         ws["L2"] = date_submitted
         ws["L3"] = date_submitted
@@ -157,12 +172,14 @@ def fill_cdf():
         ws["C5"] = phone
         ws["I5"] = location
         ws["C6"] = email
-        ws["H6"] = "USD"   # static label — always USD
+        ws["H6"] = "USD"   # static label
         ws["I6"] = "X" if currency == "USD" else ""   # X box for USD
-        ws["J6"] = "CDF"   # static label — always CDF
+        ws["J6"] = "CDF"   # static label
         ws["K6"] = "X" if currency == "CDF" else ""   # X box for CDF
 
-        account_no  = data.get("account_no", "750300")
+        # ── Requestor name in receipt and clearance sections ─────
+        ws["A46"] = name   # merged A46:C47
+        ws["C64"] = name   # merged C64:D65
 
         # ── Line items ───────────────────────────────────────────
         grand_total = 0.0
@@ -181,24 +198,27 @@ def fill_cdf():
             if item_date:
                 desc = f"{desc} — {item_date}"
 
-            # Description — left-aligned text
+            # Description — left-aligned
             ws[f"B{row}"].value = desc
+            ws[f"B{row}"].alignment = Alignment(
+                horizontal="left", vertical="center", wrap_text=True
+            )
 
-            # Speedkey — centered text
+            # Speedkey — centred
             ws[f"D{row}"].value = speedkey
             ws[f"D{row}"].alignment = Alignment(horizontal="center", vertical="center")
 
-            # Account code — centered text
+            # Account code — centred
             ws[f"F{row}"].value = account_no
             ws[f"F{row}"].alignment = Alignment(horizontal="center", vertical="center")
 
-            # Qty — number, centered
+            # Qty — number, centred
             set_number(ws, f"G{row}", qty, "0")
 
-            # Unit price — currency formatted, centered
+            # Unit price — currency formatted, centred
             set_number(ws, f"H{row}", unit_price, curr_fmt)
 
-            # Est price & actual price — currency formatted, centered
+            # Est price & actual price — currency formatted, centred
             set_number(ws, f"J{row}", line_total, curr_fmt)
             set_number(ws, f"L{row}", line_total, curr_fmt)
 
@@ -208,17 +228,13 @@ def fill_cdf():
         set_number(ws, "J41", grand_total, curr_fmt)
         set_number(ws, "L41", grand_total, curr_fmt)
 
-        # ── Receipt / clearance ──────────────────────────────────
-        ws["A46"] = name
-        ws["C64"] = name
-
         # ── Reconciliation ───────────────────────────────────────
         set_number(ws, "D52", grand_total, curr_fmt)
         set_number(ws, "D54", grand_total, curr_fmt)
         set_number(ws, "D56", 0, curr_fmt)
         set_number(ws, "D58", 0, curr_fmt)
 
-        # ── Save & return ────────────────────────────────────────
+        # ── Save ─────────────────────────────────────────────────
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)
