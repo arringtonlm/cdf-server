@@ -139,6 +139,7 @@ def fill_cdf():
         phone          = data.get("phone", "")
         location       = data.get("location", "")
         req_num        = data.get("req_num", "")
+        account_no     = data.get("account_no", "750300")
         date_submitted = data.get("date_submitted", "")
         currency       = data.get("currency", "USD")
         items          = data.get("items", [])
@@ -159,6 +160,8 @@ def fill_cdf():
         ws["H6"] = currency
         ws["I6"] = "X" if currency == "USD" else ""
         ws["J6"] = "X" if currency == "CDF" else ""
+
+        account_no  = data.get("account_no", "750300")
 
         # ── Line items ───────────────────────────────────────────
         grand_total = 0.0
@@ -183,6 +186,10 @@ def fill_cdf():
             # Speedkey — centered text
             ws[f"D{row}"].value = speedkey
             ws[f"D{row}"].alignment = Alignment(horizontal="center", vertical="center")
+
+            # Account code — centered text
+            ws[f"F{row}"].value = account_no
+            ws[f"F{row}"].alignment = Alignment(horizontal="center", vertical="center")
 
             # Qty — number, centered
             set_number(ws, f"G{row}", qty, "0")
