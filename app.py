@@ -165,9 +165,10 @@ def fill_cdf():
         standardise_fonts(ws)
 
         # ── Header ───────────────────────────────────────────────
+        date_requested = data.get("date_requested", date_submitted)
         ws["L1"] = req_num
         ws["L2"] = date_submitted
-        ws["L3"] = date_submitted
+        ws["L3"] = date_requested
         ws["C4"] = name
         ws["C5"] = phone
         ws["I5"] = location
@@ -190,6 +191,7 @@ def fill_cdf():
             desc       = item.get("description", "")
             item_date  = item.get("date", "")
             speedkey   = item.get("speedkey", "")
+            item_acct  = item.get("account_no", account_no)
             qty        = float(item.get("qty", 1))
             unit_price = float(item.get("unitPrice", 0))
             line_total = round(qty * unit_price, 2)
@@ -208,8 +210,8 @@ def fill_cdf():
             ws[f"D{row}"].value = speedkey
             ws[f"D{row}"].alignment = Alignment(horizontal="center", vertical="center")
 
-            # Account code — centred
-            ws[f"F{row}"].value = account_no
+            # Account code — centred (per-item, falls back to CDF-level account_no)
+            ws[f"F{row}"].value = item_acct
             ws[f"F{row}"].alignment = Alignment(horizontal="center", vertical="center")
 
             # Qty — number, centred
