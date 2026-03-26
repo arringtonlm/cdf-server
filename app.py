@@ -157,9 +157,10 @@ def fill_cdf():
         ws["C5"] = phone
         ws["I5"] = location
         ws["C6"] = email
-        ws["H6"] = currency
-        ws["I6"] = "X" if currency == "USD" else ""
-        ws["J6"] = "X" if currency == "CDF" else ""
+        ws["H6"] = "USD"   # static label — always USD
+        ws["I6"] = "X" if currency == "USD" else ""   # X box for USD
+        ws["J6"] = "CDF"   # static label — always CDF
+        ws["K6"] = "X" if currency == "CDF" else ""   # X box for CDF
 
         account_no  = data.get("account_no", "750300")
 
