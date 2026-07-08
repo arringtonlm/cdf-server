@@ -111,7 +111,6 @@ Return ONLY a valid JSON array, no markdown, no explanation. Each object:
   "currency": "USD" or "CDF"
 }"""
 
-        response = client.messages.create(
         # Model fallback chain — if one is deprecated, the next is tried automatically
         MODELS = [
             "claude-haiku-4-5",    # fast, cheap, great for OCR — primary choice
