@@ -205,7 +205,7 @@ def fill_cdf():
         ws["K6"] = "X" if currency == "CDF" else ""   # X box for CDF
 
         # ── Requestor name in receipt and clearance sections ─────
-        ws["A33"] = name   # receipt of cash — requestor name
+        ws["A38"] = name   # receipt of cash — requestor name
         ws["C55"] = name  # Submitted by   # merged C64:D65
 
         # ── Line items ───────────────────────────────────────────
@@ -255,9 +255,7 @@ def fill_cdf():
         # ── Totals ───────────────────────────────────────────────
         set_number(ws, "L32", grand_total, curr_fmt)
 
-        # ── Reconciliation ───────────────────────────────────────
-        set_number(ws, "K43", grand_total, curr_fmt)  # Total cash received
-        set_number(ws, "K45", grand_total, curr_fmt)  # Less total receipts submitted
+        # ── Reconciliation rows 42-50 — left blank for manual completion ──
 
         # ── Save ─────────────────────────────────────────────────
         buf = io.BytesIO()
