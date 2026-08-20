@@ -205,7 +205,7 @@ def fill_cdf():
         ws["K6"] = "X" if currency == "CDF" else ""   # X box for CDF
 
         # ── Requestor name in receipt and clearance sections ─────
-        ws["A47"] = name   # merged range top-left (requestor signature)
+        ws["A33"] = name   # receipt of cash — requestor name
         ws["C55"] = name  # Submitted by   # merged C64:D65
 
         # ── Line items ───────────────────────────────────────────
