@@ -205,15 +205,15 @@ def fill_cdf():
         ws["K6"] = "X" if currency == "CDF" else ""   # X box for CDF
 
         # ── Requestor name in receipt and clearance sections ─────
-        ws["A46"] = name   # merged A46:C47
-        ws["C64"] = name   # merged C64:D65
+        ws["A48"] = name   # merged A46:C47
+        ws["C55"] = name  # Submitted by   # merged C64:D65
 
         # ── Line items ───────────────────────────────────────────
         grand_total = 0.0
         for i, item in enumerate(items):
-            if i >= 19:
+            if i >= 11:
                 break
-            row        = 22 + i
+            row        = 21 + i
             desc       = item.get("description", "")
             item_date  = item.get("date", "")
             speedkey   = item.get("speedkey", "")
@@ -253,14 +253,11 @@ def fill_cdf():
         grand_total = round(grand_total, 2)
 
         # ── Totals ───────────────────────────────────────────────
-        set_number(ws, "J41", grand_total, curr_fmt)
-        set_number(ws, "L41", grand_total, curr_fmt)
+        set_number(ws, "L32", grand_total, curr_fmt)
 
         # ── Reconciliation ───────────────────────────────────────
-        set_number(ws, "D52", grand_total, curr_fmt)
-        set_number(ws, "D54", grand_total, curr_fmt)
-        set_number(ws, "D56", 0, curr_fmt)
-        set_number(ws, "D58", 0, curr_fmt)
+        set_number(ws, "K43", grand_total, curr_fmt)  # Total cash received
+        set_number(ws, "K45", grand_total, curr_fmt)  # Less total receipts submitted
 
         # ── Save ─────────────────────────────────────────────────
         buf = io.BytesIO()
